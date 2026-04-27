@@ -1,0 +1,183 @@
+#include <FastLED.h>
+
+FASTLED_USING_NAMESPACE
+
+#if defined(FASTLED_VERSION) && (FASTLED_VERSION < 3001000)
+#warning "Requires FastLED 3.1 or later; check github for latest code."
+#endif
+
+#define BUTTON_PIN   2
+#define DATA_PIN     4
+#define LED_TYPE     WS2812B
+#define COLOR_ORDER  GRB
+#define NUM_LEDS     200
+#define FASTLED_ALLOW_INTERRUPTS 0
+
+CRGB leds[NUM_LEDS];
+
+#define BRIGHTNESS         96
+#define FRAMES_PER_SECOND  120
+
+const unsigned long DEBOUNCE_MS = 50;
+const unsigned long HOLD_TIME_MS = 3000;         // hold 3 sec to enter autoplay
+const unsigned long PATTERN_DURATION_MS = 30000; // 30 sec per pattern in autoplay
+
+// Forward declarations
+void rainbow();
+void rainbowWithGlitter();
+void confetti();
+void sinelon();
+void juggle();
+void bpm();
+void addGlitter(fract8 chanceOfGlitter);
+void nextPattern();
+
+typedef void (*SimplePatternList[])();
+SimplePatternList gPatterns = { rainbow, rainbowWithGlitter, confetti, sinelon, juggle, bpm };
+
+uint8_t gCurrentPatternNumber = 0;
+uint8_t gHue = 0;
+
+#define ARRAY_SIZE(A) (sizeof(A) / sizeof((A)[0]))
+
+// Debounce / button tracking
+bool lastButtonReading = HIGH;
+bool stableButtonState = HIGH;
+unsigned long lastDebounceTime = 0;
+
+// Hold detection
+unsigned long buttonPressStartTime = 0;
+bool holdHandled = false;
+
+// Mode
+bool autoMode = false;
+unsigned long lastPatternChangeTime = 0;
+
+void setup() {
+  delay(3000); // 3 second delay for recovery
+
+  pinMode(BUTTON_PIN, INPUT_PULLUP);
+
+  FastLED.addLeds<LED_TYPE, DATA_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
+  FastLED.setBrightness(BRIGHTNESS);
+
+  lastPatternChangeTime = millis();
+}
+
+void loop()
+{
+  unsigned long now = millis();
+
+  // -------- Read + debounce button --------
+  bool reading = digitalRead(BUTTON_PIN);
+
+  if (reading != lastButtonReading) {
+    lastDebounceTime = now;
+  }
+
+  if ((now - lastDebounceTime) > DEBOUNCE_MS) {
+    if (reading != stableButtonState) {
+      stableButtonState = reading;
+
+      if (stableButtonState == LOW) {
+        // Button was just pressed
+        buttonPressStartTime = now;
+        holdHandled = false;
+      } else {
+        // Button was just released
+        if (!holdHandled) {
+          // This was a short press
+          if (autoMode) {
+            // single press in autoplay -> back to manual mode
+            autoMode = false;
+          } else {
+            // single press in manual mode -> next pattern
+            nextPattern();
+          }
+        }
+      }
+    }
+  }
+
+  lastButtonReading = reading;
+
+  // -------- Hold detection while button remains pressed --------
+  if (stableButtonState == LOW && !holdHandled) {
+    if (now - buttonPressStartTime >= HOLD_TIME_MS) {
+      autoMode = true;
+      holdHandled = true;
+      lastPatternChangeTime = now; // restart 30-second autoplay timer
+    }
+  }
+
+  // -------- Autoplay mode --------
+  if (autoMode && (now - lastPatternChangeTime >= PATTERN_DURATION_MS)) {
+    nextPattern();
+    lastPatternChangeTime = now;
+  }
+
+  // -------- Run current pattern --------
+  gPatterns[gCurrentPatternNumber]();
+
+  FastLED.show();
+  FastLED.delay(1000 / FRAMES_PER_SECOND);
+
+  EVERY_N_MILLISECONDS(20) { gHue++; }
+}
+
+void nextPattern()
+{
+  gCurrentPatternNumber = (gCurrentPatternNumber + 1) % ARRAY_SIZE(gPatterns);
+}
+
+void rainbow()
+{
+  fill_rainbow(leds, NUM_LEDS, gHue, 7);
+}
+
+void rainbowWithGlitter()
+{
+  rainbow();
+  addGlitter(80);
+}
+
+void addGlitter(fract8 chanceOfGlitter)
+{
+  if (random8() < chanceOfGlitter) {
+    leds[random16(NUM_LEDS)] += CRGB::White;
+  }
+}
+
+void confetti()
+{
+  fadeToBlackBy(leds, NUM_LEDS, 10);
+  int pos = random16(NUM_LEDS);
+  leds[pos] += CHSV(gHue + random8(64), 200, 255);
+}
+
+void sinelon()
+{
+  fadeToBlackBy(leds, NUM_LEDS, 20);
+  int pos = beatsin16(13, 0, NUM_LEDS - 1);
+  leds[pos] += CHSV(gHue, 255, 192);
+}
+
+void bpm()
+{
+  uint8_t BeatsPerMinute = 62;
+  CRGBPalette16 palette = PartyColors_p;
+  uint8_t beat = beatsin8(BeatsPerMinute, 64, 255);
+  for (int i = 0; i < NUM_LEDS; i++) {
+    leds[i] = ColorFromPalette(palette, gHue + (i * 2), beat - gHue + (i * 10));
+  }
+}
+
+void juggle()
+{
+  fadeToBlackBy(leds, NUM_LEDS, 20);
+  byte dothue = 0;
+  for (int i = 0; i < 8; i++) {
+    leds[beatsin16(i + 7, 0, NUM_LEDS - 1)] |= CHSV(dothue, 200, 255);
+    dothue += 32;
+  }
+}
