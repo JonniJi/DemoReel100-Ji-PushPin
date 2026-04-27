@@ -117,8 +117,10 @@ void loop() {
     if (now - buttonPressStartTime >= HOLD_TIME_MS) {
       autoMode = true;
       blendBetweenPatterns = true;   // true only while autoplay is on
-      holdHandled = true;
+      gCurrentPatternNumber = 0;     // always start autoplay from rainbow
+      gHue = 0;                      // always start rainbow from the same hue
       patternStartTime = now;
+      holdHandled = true;
     }
   }
 
