@@ -105,6 +105,7 @@ void loop()
   if (stableButtonState == LOW && !holdHandled) {
     if (now - buttonPressStartTime >= HOLD_TIME_MS) {
       autoMode = true;
+      gCurrentPatternNumber = 0;   // always start autoplay from rainbow
       holdHandled = true;
       lastPatternChangeTime = now; // restart 30-second autoplay timer
     }
